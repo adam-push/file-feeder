@@ -63,6 +63,7 @@ public class Main {
     private UpdateStream updateStream;
 
     private TopicControl topicControl = null;
+    private TopicUpdate topicUpdate = null;
     private TimeSeries timeSeries = null;
 
     private Class dataTypeClass = null;
@@ -133,6 +134,7 @@ public class Main {
     public void init() {
         System.out.println("init()");
         topicControl = session.feature(TopicControl.class);
+        topicUpdate = session.feature(TopicUpdate.class);
         timeSeries = session.feature(TimeSeries.class);
 
         // Add topic
@@ -162,9 +164,14 @@ public class Main {
             topicSpec = topicSpec.withProperty(TopicSpecification.PUBLISH_VALUES_ONLY, "true");
         }
 
-        topicControl.addTopic(topic, topicSpec).thenAccept(result -> {
-            System.out.println("Topic added");
-        });
+        topicControl.removeTopics(">" + topic);
+
+        try {
+            topicControl.addTopic(topic, topicSpec).get();
+        } catch (InterruptedException | ExecutionException ex) {
+            ex.printStackTrace();
+            System.exit(1);
+        }
 
         if(! topicIsTimeSeries) {
             try {
@@ -266,7 +273,12 @@ public class Main {
             result = timeSeries.append(topicPath, dataTypeClass, value);
         }
         else {
-            result = updateStream.set(value);
+            if(topicDontRetain) { // Must use TopicUpdate feature for DONT_RETAIN_TOPICS, stream not supported.
+                result = topicUpdate.set(topic, dataTypeClass, value);
+            }
+            else {
+                result = updateStream.set(value);
+            }
         }
         if(syncUpdates) {
             try {
