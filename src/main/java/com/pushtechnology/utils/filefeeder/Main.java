@@ -89,6 +89,21 @@ public class Main {
         statistics = new Statistics();
     }
 
+    public void showOptions() {
+        System.out.println("URL: \t\t\t\t" + url);
+        System.out.println("Principal: \t\t\t" + principal);
+        System.out.println("Credentials: \t\t\t" + credentials);
+        System.out.println("Topic: \t\t\t\t" + topic);
+        System.out.println("Topic type: \t\t\t" + (topicIsJson ? "JSON" : "Binary"));
+        System.out.println("Don't retain value: \t\t" + topicDontRetain);
+        System.out.println("Publish values only: \t\t" + topicPublishOnly);
+        System.out.println("Time series: \t\t\t" + topicIsTimeSeries);
+        System.out.println("Sleep between updates: \t\t" + sleep + "ms");
+        System.out.println("Synchronous topic updates: \t" + syncUpdates);
+        System.out.println("Read data from: \t\t" + filename);
+        System.out.println("Repeat forever: \t\t" + repeat);
+    }
+
     public void connect() {
         SessionFactory factory = Diffusion.sessions();
         if (principal != null) {
@@ -322,6 +337,7 @@ public class Main {
         }
 
         Main app = new Main(options);
+        app.showOptions();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             app.stop();
