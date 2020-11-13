@@ -5,33 +5,29 @@
 package com.pushtechnology.utils.filefeeder;
 
 import com.pushtechnology.diffusion.client.Diffusion;
-import com.pushtechnology.diffusion.client.callbacks.ErrorReason;
 import com.pushtechnology.diffusion.client.features.TimeSeries;
 import com.pushtechnology.diffusion.client.features.TopicUpdate;
 import com.pushtechnology.diffusion.client.features.UpdateStream;
 import com.pushtechnology.diffusion.client.features.control.topics.TopicControl;
-import com.pushtechnology.diffusion.client.features.control.topics.TopicUpdateControl;
-import com.pushtechnology.diffusion.client.features.control.topics.TopicUpdateControl.UpdateSource;
-import com.pushtechnology.diffusion.client.features.control.topics.TopicUpdateControl.ValueUpdater;
 import com.pushtechnology.diffusion.client.session.Session;
 import com.pushtechnology.diffusion.client.session.SessionFactory;
 import com.pushtechnology.diffusion.client.topics.details.TopicSpecification;
 import com.pushtechnology.diffusion.client.topics.details.TopicType;
 import com.pushtechnology.diffusion.datatype.binary.Binary;
 import com.pushtechnology.diffusion.datatype.json.JSON;
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import static java.util.Arrays.asList;
-
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import joptsimple.OptionParser;
-import joptsimple.OptionSet;
+
+import static java.util.Arrays.asList;
 
 /**
  *
@@ -39,12 +35,12 @@ import joptsimple.OptionSet;
  */
 public class Main {
 
-    public static final TopicUpdateControl.Updater.UpdateCallback DEFAULT_UPDATE_CALLBACK = new TopicUpdateControl.Updater.UpdateCallback.Default() {
-        @Override
-        public void onError(ErrorReason errorReason) {
-            System.err.println("Update failed: " + errorReason);
-        }
-    };
+//    public static final TopicUpdateControl.Updater.UpdateCallback DEFAULT_UPDATE_CALLBACK = new TopicUpdateControl.Updater.UpdateCallback.Default() {
+//        @Override
+//        public void onError(ErrorReason errorReason) {
+//            System.err.println("Update failed: " + errorReason);
+//        }
+//    };
 
     private final String url;
     private final String principal;
@@ -58,6 +54,7 @@ public class Main {
     private final long sleep;
     private final boolean repeat;
     private final boolean syncUpdates;
+    private final boolean streamUpdates;
 
     private Session session;
     private UpdateStream updateStream;
@@ -85,6 +82,7 @@ public class Main {
         sleep = (Long) options.valueOf("sleep");
         repeat = options.has("repeat");
         syncUpdates = options.has("sync");
+        streamUpdates = options.has("stream");
 
         dataCache = new ArrayList<>();
         statistics = new Statistics();
@@ -101,6 +99,7 @@ public class Main {
         System.out.println("Time series: \t\t\t" + topicIsTimeSeries);
         System.out.println("Sleep between updates: \t\t" + sleep + "ms");
         System.out.println("Synchronous topic updates: \t" + syncUpdates);
+        System.out.println("Updating using stream: \t\t" + streamUpdates);
         System.out.println("Read data from: \t\t" + filename);
         System.out.println("Repeat forever: \t\t" + repeat);
     }
@@ -173,7 +172,7 @@ public class Main {
             System.exit(1);
         }
 
-        if(! topicIsTimeSeries) {
+        if(! topicIsTimeSeries && streamUpdates) {
             try {
                 updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, dataTypeClass);
                 updateStream.validate().get();
@@ -273,11 +272,11 @@ public class Main {
             result = timeSeries.append(topicPath, dataTypeClass, value);
         }
         else {
-            if(topicDontRetain) { // Must use TopicUpdate feature for DONT_RETAIN_TOPICS, stream not supported.
-                result = topicUpdate.set(topic, dataTypeClass, value);
+            if(streamUpdates) {
+                result = updateStream.set(value);
             }
             else {
-                result = updateStream.set(value);
+                result = topicUpdate.set(topicPath, dataTypeClass, value);
             }
         }
         if(syncUpdates) {
@@ -339,7 +338,9 @@ public class Main {
 
                 acceptsAll(asList("r", "repeat"), "Repeat after all files processed");
 
-                acceptsAll(asList("su", "sync"), "Use synchronous updates");
+                acceptsAll(asList("sync"), "Use synchronous updates");
+
+                acceptsAll(asList("stream"), "Use UpdateStream (not for timeseries)");
             }
         };
         OptionSet options = optionParser.parse(args);
