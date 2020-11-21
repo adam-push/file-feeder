@@ -18,12 +18,12 @@ import com.pushtechnology.diffusion.datatype.json.JSON;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -38,7 +38,7 @@ public class Main {
     private final String url;
     private final String principal;
     private final String credentials;
-    private final String topic;
+    private final String namedTopic;
     private final boolean topicIsJson;
     private final boolean topicDontRetain;
     private final boolean topicPublishOnly;
@@ -50,7 +50,7 @@ public class Main {
     private final boolean streamUpdates;
 
     private Session session;
-    private UpdateStream updateStream;
+    private final Statistics statistics;
 
     ArrayList<CompletableFuture> futures = new ArrayList<>(100);
 
@@ -59,16 +59,18 @@ public class Main {
     private TimeSeries timeSeries = null;
 
     private Class dataTypeClass = null;
+    private TopicSpecification topicSpec = null;
 
-    private List<byte[]> dataCache;
+    private Map<String, byte[]> dataCache;
+    private Map<String, UpdateStream> updateStreams;
 
-    private Statistics statistics;
+    private final Random rnd = new Random();
 
     public Main(final OptionSet options) {
         url = (String) options.valueOf("url");
         principal = (String) options.valueOf("principal");
         credentials = (String) options.valueOf("credentials");
-        topic = (String) options.valueOf("topic");
+        namedTopic = (String) options.valueOf("topic");
         topicIsJson = options.has("json");
         topicDontRetain = options.has("dontretain");
         topicPublishOnly = options.has("publishonly");
@@ -79,7 +81,9 @@ public class Main {
         batchSize = (Integer) options.valueOf("batch");
         streamUpdates = options.has("stream");
 
-        dataCache = new ArrayList<>();
+        dataCache = new HashMap<>();
+        updateStreams = new HashMap<>();
+
         statistics = new Statistics();
     }
 
@@ -87,7 +91,7 @@ public class Main {
         System.out.println("URL: \t\t\t\t" + url);
         System.out.println("Principal: \t\t\t" + principal);
         System.out.println("Credentials: \t\t\t" + credentials);
-        System.out.println("Topic: \t\t\t\t" + topic);
+        System.out.println("Named topic: \t\t\t\t" + namedTopic);
         System.out.println("Topic type: \t\t\t" + (topicIsJson ? "JSON" : "Binary"));
         System.out.println("Don't retain value: \t\t" + topicDontRetain);
         System.out.println("Publish values only: \t\t" + topicPublishOnly);
@@ -131,9 +135,7 @@ public class Main {
         topicUpdate = session.feature(TopicUpdate.class);
         timeSeries = session.feature(TimeSeries.class);
 
-        // Add topic
-        TopicSpecification topicSpec;
-
+        // Build topic specification
         if (topicIsJson) {
             dataTypeClass = JSON.class;
         } else {
@@ -157,24 +159,62 @@ public class Main {
             System.out.println("Topic has property PUBLISH_VALUES_ONLY");
             topicSpec = topicSpec.withProperty(TopicSpecification.PUBLISH_VALUES_ONLY, "true");
         }
+    }
 
-        topicControl.removeTopics(">" + topic);
+    private void createTopic(String topicName) {
+        System.out.println("Create topic: \"" + topicName + "\"");
+        topicControl.removeTopics(">" + topicName);
 
         try {
-            topicControl.addTopic(topic, topicSpec).get();
+            topicControl.addTopic(topicName, topicSpec).get();
         } catch (InterruptedException | ExecutionException ex) {
             ex.printStackTrace();
-            System.exit(1);
         }
+    }
 
-        if(! topicIsTimeSeries && streamUpdates) {
+    private void createUpdateStream(String topicName) {
+        if (!topicIsTimeSeries && streamUpdates) {
             try {
-                updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, dataTypeClass);
+                UpdateStream updateStream = session.feature(TopicUpdate.class).createUpdateStream(topicName, dataTypeClass);
                 updateStream.validate().get();
+                updateStreams.put(topicName, updateStream);
             } catch (Exception ex) {
-                System.err.println("Unable to create/validate update stream: " + ex.getMessage());
+                System.err.println("Unable to create/validate update stream for \"" + topicName + "\": " + ex.getMessage());
                 System.exit(1);
             }
+        }
+    }
+
+    private void walk(Path dir) {
+        try {
+            Files.list(dir)
+                    .filter(path -> path.toFile().isFile())
+                    .sorted()
+                    .forEach(path -> {
+                        try {
+                            String topicName = pathToTopicName(path);
+                            createTopic(topicName);
+                            createUpdateStream(topicName);
+                            processFile(path);
+                        }
+                        catch(IOException ex) {
+                            ex.printStackTrace();
+                        }
+                        if(sleep >= 0) {
+                            try {
+                                Thread.sleep(sleep);
+                            } catch (InterruptedException ignore) {
+                            }
+                        }
+                    });
+            Files.list(dir)
+                    .filter(path -> path.toFile().isDirectory())
+                    .sorted()
+                    .forEach(path -> {
+                        walk(path);
+                    });
+        } catch (IOException ex) {
+            ex.printStackTrace();
         }
     }
 
@@ -184,38 +224,25 @@ public class Main {
         if (Paths.get(filename).toFile().isFile()) {
             processFile(Paths.get(filename));
         } else {
-            try {
-                Files.list(Paths.get(filename))
-                        .filter(path -> {
-                            return path.toFile().isFile();
-                        })
-                        .sorted()
-                        .forEach(path -> {
-                            processFile(path);
-                            if(sleep >= 0) {
-                                try {
-                                    Thread.sleep(sleep);
-                                } catch (InterruptedException ignore) {
-                                }
-                            }
-                        });
-            } catch (IOException ex) {
-                ex.printStackTrace();
-            }
+            walk(Paths.get(filename));
         }
 
         if(repeat) {
             System.out.println("Data from cache");
             while(true) {
-                dataCache.forEach(bytes -> {
-                        if(sleep >= 0) {
-                            try {
-                                Thread.sleep(sleep);
-                            } catch (InterruptedException ignore) {
-                            }
+                dataCache.forEach((topic, bytes) -> {
+                    if(sleep >= 0) {
+                        try {
+                            Thread.sleep(sleep);
+                        } catch (InterruptedException ignore) {
                         }
+                    }
 
-                    updateTopic(topic, bytes);
+                    // Choose a random topic name to update!
+
+                    int idx = rnd.nextInt(dataCache.keySet().size());
+                    String randomTopicName = dataCache.keySet().stream().skip(idx).findFirst().orElse(null);
+                    updateTopic(randomTopicName, bytes);
                 });
             }
         }
@@ -229,17 +256,32 @@ public class Main {
         }
     }
 
+    private String pathToTopicName(Path path) throws IOException {
+        String leading = new File(filename).getCanonicalFile().getParent();
+        String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
+        int idx = name.lastIndexOf('.');
+        if(idx != -1) {
+            name = name.substring(0, idx);
+        }
+        return name;
+    }
+
     public void processFile(Path path) {
         System.out.println("Processing file: " + path);
 
         byte[] bytes = readFileContent(path);
 
         System.out.println("Got file contents");
-        dataCache.add(bytes);
 
-        updateTopic(topic, bytes);
-
-        System.out.println("Sent update (" + bytes.length + " bytes)");
+        try {
+            String topicName = pathToTopicName(path);
+            dataCache.put(topicName, bytes);
+            updateTopic(topicName, bytes);
+            System.out.println("Sent update (" + bytes.length + " bytes)");
+        }
+        catch(IOException ex) {
+            System.err.println("Unable to process file: " + ex.getMessage());
+        }
     }
 
     private byte[] readFileContent(final Path path) {
@@ -275,7 +317,6 @@ public class Main {
     }
 
     private void updateTopic(final String topicPath, final byte[] bytes) {
-
         // Don't update if there are too many futures outstanding
         if(futures.size() >= batchSize) {
             waitForFutures();
@@ -283,7 +324,7 @@ public class Main {
 
         Object value;
         if(topicIsJson) {
-            value = Diffusion.dataTypes().json().readValue(bytes);
+            value = Diffusion.dataTypes().json().fromJsonString(new String(bytes));
         }
         else {
             value = Diffusion.dataTypes().binary().readValue(bytes);
@@ -295,7 +336,7 @@ public class Main {
         }
         else {
             if(streamUpdates) {
-                result = updateStream.set(value);
+                result = updateStreams.get(topicPath).set(value);
             }
             else {
                 result = topicUpdate.set(topicPath, dataTypeClass, value);
