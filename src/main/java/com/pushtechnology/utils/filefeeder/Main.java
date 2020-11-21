@@ -35,13 +35,6 @@ import static java.util.Arrays.asList;
  */
 public class Main {
 
-//    public static final TopicUpdateControl.Updater.UpdateCallback DEFAULT_UPDATE_CALLBACK = new TopicUpdateControl.Updater.UpdateCallback.Default() {
-//        @Override
-//        public void onError(ErrorReason errorReason) {
-//            System.err.println("Update failed: " + errorReason);
-//        }
-//    };
-
     private final String url;
     private final String principal;
     private final String credentials;
@@ -53,11 +46,13 @@ public class Main {
     private final String filename;
     private final long sleep;
     private final boolean repeat;
-    private final boolean syncUpdates;
+    private final int batchSize;
     private final boolean streamUpdates;
 
     private Session session;
     private UpdateStream updateStream;
+
+    ArrayList<CompletableFuture> futures = new ArrayList<>(100);
 
     private TopicControl topicControl = null;
     private TopicUpdate topicUpdate = null;
@@ -81,7 +76,7 @@ public class Main {
         filename = (String) options.valueOf("file");
         sleep = (Long) options.valueOf("sleep");
         repeat = options.has("repeat");
-        syncUpdates = options.has("sync");
+        batchSize = (Integer) options.valueOf("batch");
         streamUpdates = options.has("stream");
 
         dataCache = new ArrayList<>();
@@ -98,7 +93,7 @@ public class Main {
         System.out.println("Publish values only: \t\t" + topicPublishOnly);
         System.out.println("Time series: \t\t\t" + topicIsTimeSeries);
         System.out.println("Sleep between updates: \t\t" + sleep + "ms");
-        System.out.println("Synchronous topic updates: \t" + syncUpdates);
+        System.out.println("Batch size (outstanding ACKs): \t" + batchSize);
         System.out.println("Updating using stream: \t\t" + streamUpdates);
         System.out.println("Read data from: \t\t" + filename);
         System.out.println("Repeat forever: \t\t" + repeat);
@@ -257,7 +252,34 @@ public class Main {
         return bytes;
     }
 
+    private void waitForFutures() {
+        CompletableFuture future = futures.get(0);
+
+        try {
+            // Wait until we've got it
+            future.get();
+        } catch (InterruptedException | ExecutionException ex) {
+            ex.printStackTrace();
+        }
+
+        // Remove any other "done" futures from the list
+        while(futures.size() > 0) {
+            future = futures.get(0);
+            if (future.isDone()) {
+                futures.remove(0);
+            }
+            else {
+                break;
+            }
+        }
+    }
+
     private void updateTopic(final String topicPath, final byte[] bytes) {
+
+        // Don't update if there are too many futures outstanding
+        if(futures.size() >= batchSize) {
+            waitForFutures();
+        }
 
         Object value;
         if(topicIsJson) {
@@ -279,13 +301,8 @@ public class Main {
                 result = topicUpdate.set(topicPath, dataTypeClass, value);
             }
         }
-        if(syncUpdates) {
-            try {
-                result.get();
-            } catch (InterruptedException | ExecutionException ex) {
-                ex.printStackTrace();
-            }
-        }
+
+        futures.add(result);
 
         statistics.getUpdateCount().incrementAndGet();
     }
@@ -338,9 +355,12 @@ public class Main {
 
                 acceptsAll(asList("r", "repeat"), "Repeat after all files processed");
 
-                acceptsAll(asList("sync"), "Use synchronous updates");
-
                 acceptsAll(asList("stream"), "Use UpdateStream (not for timeseries)");
+
+                acceptsAll(asList("batch"), "Number of outstanding update ACKs, default unlimited (0/1 = sync)")
+                        .withRequiredArg()
+                        .ofType(Integer.class)
+                        .defaultsTo(Integer.MAX_VALUE);
             }
         };
         OptionSet options = optionParser.parse(args);
