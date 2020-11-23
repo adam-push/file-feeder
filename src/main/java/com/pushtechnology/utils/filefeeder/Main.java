@@ -38,7 +38,6 @@ public class Main {
     private final String url;
     private final String principal;
     private final String credentials;
-    private final String namedTopic;
     private final boolean topicIsJson;
     private final boolean topicDontRetain;
     private final boolean topicPublishOnly;
@@ -70,7 +69,6 @@ public class Main {
         url = (String) options.valueOf("url");
         principal = (String) options.valueOf("principal");
         credentials = (String) options.valueOf("credentials");
-        namedTopic = (String) options.valueOf("topic");
         topicIsJson = options.has("json");
         topicDontRetain = options.has("dontretain");
         topicPublishOnly = options.has("publishonly");
@@ -91,7 +89,6 @@ public class Main {
         System.out.println("URL: \t\t\t\t" + url);
         System.out.println("Principal: \t\t\t" + principal);
         System.out.println("Credentials: \t\t\t" + credentials);
-        System.out.println("Named topic: \t\t\t\t" + namedTopic);
         System.out.println("Topic type: \t\t\t" + (topicIsJson ? "JSON" : "Binary"));
         System.out.println("Don't retain value: \t\t" + topicDontRetain);
         System.out.println("Publish values only: \t\t" + topicPublishOnly);
@@ -383,14 +380,7 @@ public class Main {
                         .ofType(String.class)
                         .defaultsTo("password");
 
-                acceptsAll(asList("t", "topic"), "Diffusion topic name")
-                        .withRequiredArg()
-                        .ofType(String.class)
-                        .defaultsTo("file");
-
                 acceptsAll(asList("j", "json"), "Treat data as JSON");
-
-                acceptsAll(asList("v", "values"), "Values only (no deltas)");
 
                 acceptsAll(asList("dr", "dontretain"), "Don't retain topic values");
 
