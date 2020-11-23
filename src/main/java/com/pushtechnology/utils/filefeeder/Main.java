@@ -61,7 +61,7 @@ public class Main {
     private Class dataTypeClass = null;
     private TopicSpecification topicSpec = null;
 
-    private Map<String, byte[]> dataCache;
+    private Tree<byte[]> cache;
     private Map<String, UpdateStream> updateStreams;
 
     private final Random rnd = new Random();
@@ -81,7 +81,7 @@ public class Main {
         batchSize = (Integer) options.valueOf("batch");
         streamUpdates = options.has("stream");
 
-        dataCache = new HashMap<>();
+        cache = new Tree<>();
         updateStreams = new HashMap<>();
 
         statistics = new Statistics();
@@ -227,22 +227,36 @@ public class Main {
             walk(Paths.get(filename));
         }
 
-        if(repeat) {
+        if (repeat) {
             System.out.println("Data from cache");
-            while(true) {
-                dataCache.forEach((topic, bytes) -> {
-                    if(sleep >= 0) {
+            LinkedList<Tree<byte[]>.TreeNode<byte[]>> nodesWithData = cache.getNodesWithData();
+
+            while (true) {
+                Collections.shuffle(nodesWithData);
+                nodesWithData.forEach(node -> {
+                    if (sleep >= 0) {
                         try {
                             Thread.sleep(sleep);
                         } catch (InterruptedException ignore) {
                         }
                     }
+                    String topicName = cache.getFullName(node);
 
-                    // Choose a random topic name to update!
+                    // Choose a random sibling to get data for. If there are no other siblings, just use own
+                    // own data again.
+                    LinkedList<Tree<byte[]>.TreeNode<byte[]>> siblings = cache.getSiblings(node);
+                    byte[] data = null;
+                    if(siblings.size() > 0) {
+                        int i = rnd.nextInt(siblings.size());
+                        data = siblings.get(i).data;
+                    }
 
-                    int idx = rnd.nextInt(dataCache.keySet().size());
-                    String randomTopicName = dataCache.keySet().stream().skip(idx).findFirst().orElse(null);
-                    updateTopic(randomTopicName, bytes);
+                    if(data == null) {
+                        data = node.data;
+                    }
+
+                    updateTopic(topicName, data);
+
                 });
             }
         }
@@ -275,7 +289,7 @@ public class Main {
 
         try {
             String topicName = pathToTopicName(path);
-            dataCache.put(topicName, bytes);
+            cache.add(topicName, bytes);
             updateTopic(topicName, bytes);
             System.out.println("Sent update (" + bytes.length + " bytes)");
         }
