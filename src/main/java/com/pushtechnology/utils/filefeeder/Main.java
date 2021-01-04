@@ -118,8 +118,8 @@ public class Main {
             }
             try {
                 System.out.println("Unable to connect"
-                        + reason != null ? ": " + reason : ""
-                                + ", retrying");
+                        + (reason != null ? ": " + reason : "")
+                        + ", retrying");
                 Thread.sleep(1000);
             } catch (InterruptedException ignore) {
             }
