@@ -13,6 +13,7 @@ import com.pushtechnology.diffusion.client.session.Session;
 import com.pushtechnology.diffusion.client.session.SessionFactory;
 import com.pushtechnology.diffusion.client.topics.details.TopicSpecification;
 import com.pushtechnology.diffusion.client.topics.details.TopicType;
+import com.pushtechnology.diffusion.datatype.DataType;
 import com.pushtechnology.diffusion.datatype.binary.Binary;
 import com.pushtechnology.diffusion.datatype.json.JSON;
 import joptsimple.OptionParser;
@@ -38,7 +39,11 @@ public class Main {
     private final String url;
     private final String principal;
     private final String credentials;
-    private final boolean topicIsJson;
+
+    private final DataType dataType;
+    private final TopicType topicType;
+    private final Class valueClass;
+
     private final boolean topicDontRetain;
     private final boolean topicPublishOnly;
     private final boolean topicIsTimeSeries;
@@ -57,7 +62,6 @@ public class Main {
     private TopicUpdate topicUpdate = null;
     private TimeSeries timeSeries = null;
 
-    private Class dataTypeClass = null;
     private TopicSpecification topicSpec = null;
 
     private Tree<byte[]> cache;
@@ -69,7 +73,32 @@ public class Main {
         url = (String) options.valueOf("url");
         principal = (String) options.valueOf("principal");
         credentials = (String) options.valueOf("credentials");
-        topicIsJson = options.has("json");
+
+        String type = ((String)options.valueOf("type"));
+        dataType = Diffusion.dataTypes().getByName(type.toLowerCase());
+        topicType = TopicType.valueOf(type.toUpperCase());
+
+        switch(topicType) {
+            case STRING:
+                valueClass = String.class;
+                break;
+            case JSON:
+                valueClass = JSON.class;
+                break;
+            case INT64:
+                valueClass = Long.class;
+                break;
+            case DOUBLE:
+                valueClass = Double.class;
+                break;
+            case BINARY:
+                valueClass = Binary.class;
+                break;
+            default:
+                valueClass = null;
+                break;
+        }
+
         topicDontRetain = options.has("dontretain");
         topicPublishOnly = options.has("publishonly");
         topicIsTimeSeries = options.has("timeseries");
@@ -89,7 +118,7 @@ public class Main {
         System.out.println("URL: \t\t\t\t" + url);
         System.out.println("Principal: \t\t\t" + principal);
         System.out.println("Credentials: \t\t\t" + credentials);
-        System.out.println("Topic type: \t\t\t" + (topicIsJson ? "JSON" : "Binary"));
+        System.out.println("Topic type: \t\t\t" + topicType.name());
         System.out.println("Don't retain value: \t\t" + topicDontRetain);
         System.out.println("Publish values only: \t\t" + topicPublishOnly);
         System.out.println("Time series: \t\t\t" + topicIsTimeSeries);
@@ -132,19 +161,12 @@ public class Main {
         topicUpdate = session.feature(TopicUpdate.class);
         timeSeries = session.feature(TimeSeries.class);
 
-        // Build topic specification
-        if (topicIsJson) {
-            dataTypeClass = JSON.class;
-        } else {
-            dataTypeClass = Binary.class;
-        }
-
         if (topicIsTimeSeries) {
             topicSpec = topicControl.newSpecification(TopicType.TIME_SERIES);
-            topicSpec = topicSpec.withProperty(TopicSpecification.TIME_SERIES_EVENT_VALUE_TYPE, topicIsJson ? "json" : "binary");
+            topicSpec = topicSpec.withProperty(TopicSpecification.TIME_SERIES_EVENT_VALUE_TYPE, topicType.name());
             topicSpec = topicSpec.withProperty(TopicSpecification.TIME_SERIES_RETAINED_RANGE, "limit " + 1000); // Integer.MAX_VALUE);
         } else {
-            topicSpec = topicControl.newSpecification(topicIsJson ? TopicType.JSON : TopicType.BINARY);
+            topicSpec = topicControl.newSpecification(topicType);
         }
 
         if (topicDontRetain) {
@@ -172,7 +194,7 @@ public class Main {
     private void createUpdateStream(String topicName) {
         if (!topicIsTimeSeries && streamUpdates) {
             try {
-                UpdateStream updateStream = session.feature(TopicUpdate.class).createUpdateStream(topicName, dataTypeClass);
+                UpdateStream updateStream = session.feature(TopicUpdate.class).createUpdateStream(topicName, dataType.getClass());
                 updateStream.validate().get();
                 updateStreams.put(topicName, updateStream);
             } catch (Exception ex) {
@@ -333,25 +355,42 @@ public class Main {
             waitForFutures();
         }
 
-        Object value;
-        if(topicIsJson) {
-            value = Diffusion.dataTypes().json().fromJsonString(new String(bytes));
+        Object value = null;
+        switch(topicType) {
+            case STRING:
+                value = new String(bytes);
+                break;
+            case JSON:
+                value = Diffusion.dataTypes().json().fromJsonString(new String(bytes));
+                break;
+            case BINARY:
+                value = Diffusion.dataTypes().binary().readValue(bytes);
+                break;
+            case RECORD_V2:
+                value = Diffusion.dataTypes().recordV2().readValue(bytes);
+                break;
+            case DOUBLE:
+                value = Diffusion.dataTypes().doubleFloat().readValue(bytes);
+                break;
+            case INT64:
+                value = Diffusion.dataTypes().int64().readValue(bytes);
+                break;
+            default:
+                break;
         }
-        else {
-            value = Diffusion.dataTypes().binary().readValue(bytes);
+
+        if(value == null) {
+            System.err.println("Value for " + topicPath + " is null, ignoring");
+            return;
         }
 
         CompletableFuture result;
-        if (topicIsTimeSeries) {
-            result = timeSeries.append(topicPath, dataTypeClass, value);
+        if(streamUpdates) {
+            result = updateStreams.get(topicPath).set(value);
         }
         else {
-            if(streamUpdates) {
-                result = updateStreams.get(topicPath).set(value);
-            }
-            else {
-                result = topicUpdate.set(topicPath, dataTypeClass, value);
-            }
+            Class dtc = dataType.getClass();
+            result = topicUpdate.set(topicPath, valueClass, value);
         }
 
         futures.add(result);
@@ -380,7 +419,10 @@ public class Main {
                         .ofType(String.class)
                         .defaultsTo("password");
 
-                acceptsAll(asList("j", "json"), "Treat data as JSON");
+                acceptsAll(asList("t", "type"), "Default data type (JSON, STRING, INT64, DOUBLE, BINARY)")
+                        .withRequiredArg()
+                        .ofType(String.class)
+                        .defaultsTo("binary");
 
                 acceptsAll(asList("dr", "dontretain"), "Don't retain topic values");
 

@@ -17,13 +17,20 @@ Password for connecting to Diffusion
 
 ### --file <String>
 #### Default: files
-File to be used as the source of data, or directory containing files. Directories are recursively scanned for files, so this option can be used to instantiate a topic tree or branch easily. The file or directory name is used as the topic name. However, if a file (or directory) ends with the suffix ".json", the suffix is stripped from the topic name.
+File to be used as the source of data, or directory containing files. Directories are recursively scanned for files, so this option can be used to instantiate a topic tree or branch easily. The file or directory name is used as the topic name. The file suffix is stripped from the topic name (e.g. ".txt", ".json").
 
-### --json
-Create the topics as JSON type, otherwise treat them as Binary.
+### --type
+#### Default: binary
+The type of topic to create, one of:
+
+- string
+- JSON
+- int64
+- double
+- binary
 
 ### --timeseries
-Topics are created as TimeSeries topics. The base type is either Binary or JSON (as per the `--json` flag).
+Topics are created as TimeSeries topics. The base type is given by the `--type` flag.
 
 ### --publishonly
 Set the `PUBLISH_VALUES_ONLY` property on all topics (i.e. disable deltas).
