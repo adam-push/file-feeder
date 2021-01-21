@@ -279,13 +279,18 @@ public class Main {
                 });
             }
         }
+
+        statistics.stop();
+        session.close();
     }
 
     public void stop() {
         System.out.println("stop()");
 
+        statistics.stop();
         if(session != null) {
             session.close();
+            System.out.println("Session closed");
         }
     }
 

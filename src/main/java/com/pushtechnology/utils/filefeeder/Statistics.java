@@ -1,6 +1,8 @@
 package com.pushtechnology.utils.filefeeder;
 
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -9,6 +11,9 @@ public class Statistics {
 
     private int period = 5;
     private int lastCount = 0;
+
+    private final ScheduledExecutorService executor;
+    private final ScheduledFuture<?> scheduledFuture;
 
     public Statistics() {
         updateCount = new AtomicInteger(0);
@@ -20,10 +25,17 @@ public class Statistics {
             System.out.println("Updates: " + count + " (" + periodCount + ", " + (periodCount / period) + "/sec)");
         };
 
-        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(outputTask, 0, period, TimeUnit.SECONDS);
+        executor = Executors.newSingleThreadScheduledExecutor();
+        scheduledFuture = executor.scheduleAtFixedRate(outputTask, 0, period, TimeUnit.SECONDS);
     }
 
     public AtomicInteger getUpdateCount() {
         return updateCount;
     }
+
+    public void stop() {
+        scheduledFuture.cancel(true);
+        executor.shutdown();
+    }
 }
+
