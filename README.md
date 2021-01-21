@@ -17,7 +17,7 @@ Password for connecting to Diffusion
 
 ### --file <String>
 #### Default: files
-File to be used as the source of data, or directory containing files. Directories are recursively scanned for files, so this option can be used to instantiate a topic tree or branch easily. The file or directory name is used as the topic name. The file suffix is stripped from the topic name (e.g. ".txt", ".json").
+File to be used as the source of data, or directory containing files. Directories are recursively scanned for files, so this option can be used to instantiate a topic tree or branch easily. The file or directory name is used as the topic name.
 
 ### --type
 #### Default: binary
@@ -73,7 +73,8 @@ A/B/E
 
 When updating `A/B/C`, the data may come from `A/B/D` or `A/B/E`, chosen at random.
 
+### --timeseries
+Created topics should be time series. The retained range is hardcoded to 1,000.
 
-
-
-
+### --topic <String>
+Use a fixed topic name for all updates. This is useful if you want to publish many updates to a single topic when you have a collection of files.
