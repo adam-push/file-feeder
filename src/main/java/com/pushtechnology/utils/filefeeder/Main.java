@@ -40,6 +40,7 @@ public class Main {
     private final String principal;
     private final String credentials;
 
+    private final String fixedTopicName;
     private final DataType dataType;
     private final TopicType topicType;
     private final Class valueClass;
@@ -74,6 +75,7 @@ public class Main {
         principal = (String) options.valueOf("principal");
         credentials = (String) options.valueOf("credentials");
 
+        fixedTopicName = options.has("topic") ? (String)options.valueOf("topic") : null;
         String type = ((String)options.valueOf("type"));
         dataType = Diffusion.dataTypes().getByName(type.toLowerCase());
         topicType = TopicType.valueOf(type.toUpperCase());
@@ -181,24 +183,30 @@ public class Main {
     }
 
     private void createTopic(String topicName) {
-        System.out.println("Create topic: \"" + topicName + "\"");
-        topicControl.removeTopics(">" + topicName);
+        String topic = fixedTopicName != null ? fixedTopicName : topicName;
+        System.out.println("Create topic: \"" + topic + "\"");
+        // topicControl.removeTopics(">" + topicName);
 
         try {
-            topicControl.addTopic(topicName, topicSpec).get();
+            topicControl.addTopic(topic, topicSpec).get();
         } catch (InterruptedException | ExecutionException ex) {
             ex.printStackTrace();
         }
     }
 
     private void createUpdateStream(String topicName) {
+        String topic = fixedTopicName != null ? fixedTopicName : topicName;
+        if(updateStreams.containsKey(topic)) {
+            return;
+        }
+
         if (!topicIsTimeSeries && streamUpdates) {
             try {
-                UpdateStream updateStream = session.feature(TopicUpdate.class).createUpdateStream(topicName, dataType.getClass());
+                UpdateStream updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, dataType.getClass());
                 updateStream.validate().get();
-                updateStreams.put(topicName, updateStream);
+                updateStreams.put(topic, updateStream);
             } catch (Exception ex) {
-                System.err.println("Unable to create/validate update stream for \"" + topicName + "\": " + ex.getMessage());
+                System.err.println("Unable to create/validate update stream for \"" + topic + "\": " + ex.getMessage());
                 System.exit(1);
             }
         }
@@ -389,13 +397,14 @@ public class Main {
             return;
         }
 
+        String topic = fixedTopicName != null ? fixedTopicName : topicPath;
+
         CompletableFuture result;
         if(streamUpdates) {
-            result = updateStreams.get(topicPath).set(value);
+            result = updateStreams.get(topic).set(value);
         }
         else {
-            Class dtc = dataType.getClass();
-            result = topicUpdate.set(topicPath, valueClass, value);
+            result = topicUpdate.set(topic, valueClass, value);
         }
 
         futures.add(result);
@@ -453,6 +462,10 @@ public class Main {
                         .withRequiredArg()
                         .ofType(Integer.class)
                         .defaultsTo(Integer.MAX_VALUE);
+
+                acceptsAll(asList("topic"), "Fixed topic name")
+                        .withRequiredArg()
+                        .ofType(String.class);
             }
         };
         OptionSet options = optionParser.parse(args);
