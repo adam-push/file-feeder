@@ -61,9 +61,10 @@ Using this option, we can tune how many outstanding updates we can have before s
 A value of 1 effectively turns the update into a synchronous operation.
 
 ### --repeat
-Once all files have been read, continue to update the topics at the rate specified by `--sleep`. The topic data is cached in memory, so it is not read a second time. This helps with performance.
+Once all files have been read, continue to update the topics at the rate specified by `--sleep`. If the topic data is cached in memory (--cache), it is not read a second time. This helps with performance.
 
-Each iteration, all topics are shuffled into a random order and then sequentially updated. Data for each topic is, where possible, chosen from a sibling topic of the one being updated.
+If --cache is specified (see below), all topics in the cache are shuffled into a new random order and sequentially updated. This process is repeated once the last topic has been processed.
+Data for each topic is, where possible, chosen from a sibling topic of the one being updated (so topics may still change value even though new data is not read).
 
 Given the topics:
 
@@ -75,6 +76,10 @@ A/B/E
 ```
 
 When updating `A/B/C`, the data may come from `A/B/D` or `A/B/E`, chosen at random.
+
+### --cache
+When using --repeat, cache data when it is read from a file. This will prevent reading new files, or changes to files.
+Note that reading from the cache is faster and often useful for performance testing.
 
 ### --timeseries
 Created topics should be time series. The retained range is hardcoded to 1,000.

@@ -27,6 +27,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
 
@@ -52,6 +53,7 @@ public class Main {
     private final boolean deleteFiles;
     private final long sleep;
     private final boolean repeat;
+    private final boolean useCache;
     private final int batchSize;
     private final boolean streamUpdates;
 
@@ -110,6 +112,7 @@ public class Main {
         filename = (String) options.valueOf("file");
         sleep = (Long) options.valueOf("sleep");
         repeat = options.has("repeat");
+        useCache = options.has("cache");
         batchSize = (Integer) options.valueOf("batch");
         streamUpdates = options.has("stream");
 
@@ -217,8 +220,9 @@ public class Main {
 
     private void walk(Path dir) {
         try {
-            Files.list(dir)
-                    .filter(path -> path.toFile().isFile())
+
+            Stream<Path> fileStream = Files.list(dir);
+            fileStream.filter(path -> path.toFile().isFile())
                     .sorted()
                     .forEach(path -> {
                         try {
@@ -237,37 +241,49 @@ public class Main {
                             }
                         }
                     });
-            Files.list(dir)
-                    .filter(path -> path.toFile().isDirectory())
+            fileStream.close();
+
+            fileStream = Files.list(dir);
+            fileStream.filter(path -> path.toFile().isDirectory())
                     .sorted()
                     .forEach(path -> {
                         walk(path);
                     });
+            fileStream.close();
         } catch (IOException ex) {
             ex.printStackTrace();
+
+            try {
+                Thread.sleep(60000);
+            }
+            catch(InterruptedException ignore) {}
+            System.exit(1);
         }
     }
 
     public void run() {
         System.out.println("run()");
 
-        if (Paths.get(filename).toFile().isFile()) {
-            processFile(Paths.get(filename));
-        } else {
-            walk(Paths.get(filename));
-        }
+        boolean firstRun = true;
 
-        if (repeat) {
-            System.out.println("Data from cache");
-            LinkedList<Tree<byte[]>.TreeNode<byte[]>> nodesWithData = cache.getNodesWithData();
+        do {
+            if(firstRun || ! useCache) {
+                if (Paths.get(filename).toFile().isFile()) {
+                    processFile(Paths.get(filename));
+                } else {
+                    walk(Paths.get(filename));
+                }
+            }
+            else if(useCache) {
+                System.out.println("Data from cache");
+                LinkedList<Tree<byte[]>.TreeNode<byte[]>> nodesWithData = cache.getNodesWithData();
 
-            while (true) {
                 Collections.shuffle(nodesWithData);
                 nodesWithData.forEach(node -> {
                     if (sleep >= 0) {
                         try {
                             Thread.sleep(sleep);
-                        } catch (InterruptedException ignore) {
+                                } catch (InterruptedException ignore) {
                         }
                     }
                     String topicName = cache.getFullName(node);
@@ -289,7 +305,10 @@ public class Main {
 
                 });
             }
-        }
+
+            firstRun = false;
+
+        } while(repeat);
 
         statistics.stop();
         session.close();
@@ -324,7 +343,10 @@ public class Main {
 
         try {
             String topicName = pathToTopicName(path);
-            cache.add(topicName, bytes);
+
+            if(useCache) {
+                cache.add(topicName, bytes);
+            }
             updateTopic(topicName, bytes);
             System.out.println("Sent update (" + bytes.length + " bytes)");
 
@@ -467,6 +489,8 @@ public class Main {
                         .defaultsTo(1000L);
 
                 acceptsAll(asList("r", "repeat"), "Repeat after all files processed");
+
+                acceptsAll(asList("cache"), "Cache file data for use when --repeat is specified; do not read the file contents again");
 
                 acceptsAll(asList("stream"), "Use UpdateStream (not for timeseries)");
 
