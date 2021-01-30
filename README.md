@@ -19,6 +19,9 @@ Password for connecting to Diffusion
 #### Default: files
 File to be used as the source of data, or directory containing files. Directories are recursively scanned for files, so this option can be used to instantiate a topic tree or branch easily. The file or directory name is used as the topic name.
 
+### --delete
+Delete files after they have been read. Note that with the --repeat flag, data is still read from an internal cache, so updates still occur.
+
 ### --type
 #### Default: binary
 The type of topic to create, one of:

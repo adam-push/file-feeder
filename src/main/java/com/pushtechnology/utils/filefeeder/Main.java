@@ -49,6 +49,7 @@ public class Main {
     private final boolean topicPublishOnly;
     private final boolean topicIsTimeSeries;
     private final String filename;
+    private final boolean deleteFiles;
     private final long sleep;
     private final boolean repeat;
     private final int batchSize;
@@ -76,6 +77,8 @@ public class Main {
         credentials = (String) options.valueOf("credentials");
 
         fixedTopicName = options.has("topic") ? (String)options.valueOf("topic") : null;
+        deleteFiles = options.has("delete");
+
         String type = ((String)options.valueOf("type"));
         dataType = Diffusion.dataTypes().getByName(type.toLowerCase());
         topicType = TopicType.valueOf(type.toUpperCase());
@@ -324,6 +327,15 @@ public class Main {
             cache.add(topicName, bytes);
             updateTopic(topicName, bytes);
             System.out.println("Sent update (" + bytes.length + " bytes)");
+
+            if(deleteFiles) {
+                if(path.toFile().delete()) {
+                    System.out.println("Deleted file " + path);
+                }
+                else {
+                    System.out.println("Failed to delete file " + path);
+                }
+            }
         }
         catch(IOException ex) {
             System.err.println("Unable to process file: " + ex.getMessage());
@@ -466,6 +478,8 @@ public class Main {
                 acceptsAll(asList("topic"), "Fixed topic name")
                         .withRequiredArg()
                         .ofType(String.class);
+
+                acceptsAll(asList("delete"), "Delete file after reading");
             }
         };
         OptionSet options = optionParser.parse(args);
