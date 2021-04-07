@@ -13,13 +13,13 @@ import com.pushtechnology.diffusion.client.session.SessionFactory;
 import com.pushtechnology.diffusion.client.topics.details.TopicSpecification;
 import com.pushtechnology.diffusion.client.topics.details.TopicType;
 import com.pushtechnology.diffusion.datatype.DataType;
+import com.pushtechnology.diffusion.datatype.InvalidDataException;
 import com.pushtechnology.diffusion.datatype.binary.Binary;
 import com.pushtechnology.diffusion.datatype.json.JSON;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -49,6 +49,7 @@ public class Main {
     private final boolean topicPublishOnly;
     private final boolean topicIsTimeSeries;
     private final String filename;
+    private final boolean splitLines;
     private final boolean deleteFiles;
     private final long sleep;
     private final boolean repeat;
@@ -66,7 +67,7 @@ public class Main {
 
     private TopicSpecification topicSpec = null;
 
-    private final Tree<byte[]> cache;
+    private final Tree<ChunkSupplier> cache;
     private final Map<String, UpdateStream> updateStreams;
 
     private final Random rnd = new Random();
@@ -108,6 +109,7 @@ public class Main {
         topicPublishOnly = options.has("publishonly");
         topicIsTimeSeries = options.has("timeseries");
         filename = (String) options.valueOf("file");
+        splitLines = options.has("newline");
         sleep = (Long) options.valueOf("sleep");
         repeat = options.has("repeat");
         useCache = options.has("cache");
@@ -227,12 +229,6 @@ public class Main {
                         catch(IOException ex) {
                             ex.printStackTrace();
                         }
-                        if(sleep >= 0) {
-                            try {
-                                Thread.sleep(sleep);
-                            } catch (InterruptedException ignore) {
-                            }
-                        }
                     });
             fileStream.close();
 
@@ -267,34 +263,42 @@ public class Main {
             }
             else {
                 // Using cache
-                System.out.println("Data from cache");
-                LinkedList<Tree<byte[]>.TreeNode<byte[]>> nodesWithData = cache.getNodesWithData();
+                LinkedList<Tree<ChunkSupplier>.TreeNode<ChunkSupplier>> nodesWithData = cache.getNodesWithData();
 
                 Collections.shuffle(nodesWithData);
                 nodesWithData.forEach(node -> {
                     if (sleep >= 0) {
                         try {
                             Thread.sleep(sleep);
-                                } catch (InterruptedException ignore) {
+                        } catch (InterruptedException ignore) {
                         }
                     }
                     String topicName = cache.getFullName(node);
 
-                    // Choose a random sibling to get data for. If there are no other siblings, just use own
-                    // own data again.
-                    LinkedList<Tree<byte[]>.TreeNode<byte[]>> siblings = cache.getSiblings(node);
+                    // Get some random data for this node.
+                    // If there are multiple records per file, choose a random record from this file.
+                    // Otherwise, find a topic at the same level (i.e. a sibling) and use its data.
+                    // Failing all of that, just use our own data again.
                     byte[] data = null;
-                    if(siblings.size() > 0) {
-                        int i = rnd.nextInt(siblings.size());
-                        data = siblings.get(i).data;
+                    if(splitLines) {
+                        data = node.data.getRandom();
                     }
-
-                    if(data == null) {
-                        data = node.data;
+                    else {
+                        // Choose a random sibling to get data for. If there are no other siblings, just use own
+                        // own data again.
+                        LinkedList<Tree<ChunkSupplier>.TreeNode<ChunkSupplier>> siblings = cache.getSiblings(node);
+                        if(siblings.size() > 0) {
+                            int i = rnd.nextInt(siblings.size());
+                            data = siblings.get(i).data.get();
+                        }
+                        else {
+                            if(data == null) {
+                                data = node.data.get();
+                            }
+                        }
                     }
 
                     updateTopic(topicName, data);
-
                 });
             }
 
@@ -331,16 +335,26 @@ public class Main {
 
         byte[] bytes = readFileContent(path);
 
-        System.out.println("Got file contents");
-
         try {
             String topicName = pathToTopicName(path);
 
+            ChunkSupplier supplier = new ChunkSupplier(bytes, splitLines);
+
             if(useCache) {
-                cache.add(topicName, bytes);
+                cache.add(topicName, supplier);
             }
-            updateTopic(topicName, bytes);
-            System.out.println("Sent update (" + bytes.length + " bytes)");
+
+            byte[] chunk;
+            while((chunk = supplier.get()) != null) {
+                updateTopic(topicName, chunk);
+
+                if(sleep >= 0) {
+                    try {
+                        Thread.sleep(sleep);
+                    } catch (InterruptedException ignore) {
+                    }
+                }
+            }
 
             if(deleteFiles) {
                 if(path.toFile().delete()) {
@@ -354,6 +368,7 @@ public class Main {
         catch(IOException ex) {
             System.err.println("Unable to process file: " + ex.getMessage());
         }
+
     }
 
     private byte[] readFileContent(final Path path) {
@@ -395,27 +410,33 @@ public class Main {
         }
 
         Object value = null;
-        switch(topicType) {
-            case STRING:
-                value = new String(bytes);
-                break;
-            case JSON:
-                value = Diffusion.dataTypes().json().fromJsonString(new String(bytes));
-                break;
-            case BINARY:
-                value = Diffusion.dataTypes().binary().readValue(bytes);
-                break;
-            case RECORD_V2:
-                value = Diffusion.dataTypes().recordV2().readValue(bytes);
-                break;
-            case DOUBLE:
-                value = Diffusion.dataTypes().doubleFloat().readValue(bytes);
-                break;
-            case INT64:
-                value = Diffusion.dataTypes().int64().readValue(bytes);
-                break;
-            default:
-                break;
+
+        try {
+            switch (topicType) {
+                case STRING:
+                    value = new String(bytes);
+                    break;
+                case JSON:
+                    value = Diffusion.dataTypes().json().fromJsonString(new String(bytes));
+                    break;
+                case BINARY:
+                    value = Diffusion.dataTypes().binary().readValue(bytes);
+                    break;
+                case RECORD_V2:
+                    value = Diffusion.dataTypes().recordV2().readValue(bytes);
+                    break;
+                case DOUBLE:
+                    value = Diffusion.dataTypes().doubleFloat().readValue(bytes);
+                    break;
+                case INT64:
+                    value = Diffusion.dataTypes().int64().readValue(bytes);
+                    break;
+                default:
+                    break;
+            }
+        }
+        catch(InvalidDataException ex) {
+            System.err.println("Invalid data:" + ex.getMessage());
         }
 
         if(value == null) {
@@ -474,6 +495,8 @@ public class Main {
                         .withRequiredArg()
                         .ofType(String.class)
                         .defaultsTo("files");
+
+                acceptsAll(asList("nl", "newline"), "Files contain multiple newline-delimited records. Process them individually.");
 
                 acceptsAll(asList("s", "sleep"), "Time to sleep between each file (in ms)")
                         .withRequiredArg()

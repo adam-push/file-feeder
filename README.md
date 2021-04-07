@@ -19,6 +19,9 @@ Password for connecting to Diffusion
 #### Default: files
 File to be used as the source of data, or directory containing files. Directories are recursively scanned for files, so this option can be used to instantiate a topic tree or branch easily. The file or directory name is used as the topic name.
 
+### --newline
+Treat the input files as a source of newline-separated records.
+
 ### --delete
 Delete files after they have been read. Note that with the --repeat flag, data is still read from an internal cache, so updates still occur.
 
@@ -63,8 +66,11 @@ A value of 1 effectively turns the update into a synchronous operation.
 ### --repeat
 Once all files have been read, continue to update the topics at the rate specified by `--sleep`. If the topic data is cached in memory (--cache), it is not read a second time. This helps with performance.
 
-If --cache is specified (see below), all topics in the cache are shuffled into a new random order and sequentially updated. This process is repeated once the last topic has been processed.
-Data for each topic is, where possible, chosen from a sibling topic of the one being updated (so topics may still change value even though new data is not read).
+If `--cache` is specified (see below), all topics in the cache are shuffled into a new random order and sequentially updated. This process is repeated once the last topic has been processed.
+
+If both `--cache` and `--newline` have been specfied, a random record is taken from the same file and used as the new update value.
+
+If `--newline` is not specified then data for each topic is, where possible, chosen from a sibling topic of the one being updated (so topics may still change value even though new data is not read).
 
 Given the topics:
 
