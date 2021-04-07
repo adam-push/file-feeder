@@ -5,7 +5,6 @@
 package com.pushtechnology.utils.filefeeder;
 
 import com.pushtechnology.diffusion.client.Diffusion;
-import com.pushtechnology.diffusion.client.features.TimeSeries;
 import com.pushtechnology.diffusion.client.features.TopicUpdate;
 import com.pushtechnology.diffusion.client.features.UpdateStream;
 import com.pushtechnology.diffusion.client.features.control.topics.TopicControl;
@@ -42,7 +41,7 @@ public class Main {
     private final String credentials;
 
     private final String fixedTopicName;
-    private final DataType dataType;
+    private final DataType<?> dataType;
     private final TopicType topicType;
     private final Class valueClass;
 
@@ -60,16 +59,15 @@ public class Main {
     private Session session;
     private final Statistics statistics;
 
-    ArrayList<CompletableFuture> futures = new ArrayList<>(100);
+    ArrayList<CompletableFuture<?>> futures = new ArrayList<>(100);
 
     private TopicControl topicControl = null;
     private TopicUpdate topicUpdate = null;
-    private TimeSeries timeSeries = null;
 
     private TopicSpecification topicSpec = null;
 
-    private Tree<byte[]> cache;
-    private Map<String, UpdateStream> updateStreams;
+    private final Tree<byte[]> cache;
+    private final Map<String, UpdateStream> updateStreams;
 
     private final Random rnd = new Random();
 
@@ -146,17 +144,13 @@ public class Main {
             factory = factory.password(credentials);
         }
 
-        String reason;
         while (true) {
-            reason = null;
             session = factory.open(url);
             if (session != null && session.getState().isConnected()) {
                 break;
             }
             try {
-                System.out.println("Unable to connect"
-                        + (reason != null ? ": " + reason : "")
-                        + ", retrying");
+                System.out.println("Unable to connect, retrying");
                 Thread.sleep(1000);
             } catch (InterruptedException ignore) {
             }
@@ -167,7 +161,6 @@ public class Main {
         System.out.println("init()");
         topicControl = session.feature(TopicControl.class);
         topicUpdate = session.feature(TopicUpdate.class);
-        timeSeries = session.feature(TimeSeries.class);
 
         if (topicIsTimeSeries) {
             topicSpec = topicControl.newSpecification(TopicType.TIME_SERIES);
@@ -208,7 +201,7 @@ public class Main {
 
         if (!topicIsTimeSeries && streamUpdates) {
             try {
-                UpdateStream updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, dataType.getClass());
+                UpdateStream<?> updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, dataType.getClass());
                 updateStream.validate().get();
                 updateStreams.put(topic, updateStream);
             } catch (Exception ex) {
@@ -246,9 +239,7 @@ public class Main {
             fileStream = Files.list(dir);
             fileStream.filter(path -> path.toFile().isDirectory())
                     .sorted()
-                    .forEach(path -> {
-                        walk(path);
-                    });
+                    .forEach(this::walk);
             fileStream.close();
         } catch (IOException ex) {
             ex.printStackTrace();
@@ -274,7 +265,8 @@ public class Main {
                     walk(Paths.get(filename));
                 }
             }
-            else if(useCache) {
+            else {
+                // Using cache
                 System.out.println("Data from cache");
                 LinkedList<Tree<byte[]>.TreeNode<byte[]>> nodesWithData = cache.getNodesWithData();
 
@@ -375,7 +367,7 @@ public class Main {
     }
 
     private void waitForFutures() {
-        CompletableFuture future = futures.get(0);
+        CompletableFuture<?> future = futures.get(0);
 
         try {
             // Wait until we've got it
@@ -433,7 +425,7 @@ public class Main {
 
         String topic = fixedTopicName != null ? fixedTopicName : topicPath;
 
-        CompletableFuture result;
+        CompletableFuture<?> result;
         if(streamUpdates) {
             result = updateStreams.get(topic).set(value);
         }
@@ -515,9 +507,7 @@ public class Main {
         Main app = new Main(options);
         app.showOptions();
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            app.stop();
-        }));
+        Runtime.getRuntime().addShutdownHook(new Thread(app::stop));
 
         app.connect();
         app.init();
