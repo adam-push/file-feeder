@@ -478,7 +478,7 @@ public class Main {
 
                 acceptsAll(asList("ts", "timeseries"), "Topic is time-series");
 
-                acceptsAll(asList("f", "file"), "File, or firectory containing files to process")
+                acceptsAll(asList("f", "file"), "File, or directory containing files to process")
                         .withRequiredArg()
                         .ofType(String.class)
                         .defaultsTo("files");
