@@ -92,3 +92,6 @@ Created topics should be time series. The retained range is hardcoded to 1,000.
 
 ### --topic <String>
 Use a fixed topic name for all updates. This is useful if you want to publish many updates to a single topic when you have a collection of files.
+
+### --prefix <String>
+If specified, the given path prefix is prepended to the destination topic name.

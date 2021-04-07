@@ -41,6 +41,7 @@ public class Main {
     private final String credentials;
 
     private final String fixedTopicName;
+    private final String topicPrefix;
     private final DataType<?> dataType;
     private final TopicType topicType;
     private final Class valueClass;
@@ -78,6 +79,14 @@ public class Main {
         credentials = (String) options.valueOf("credentials");
 
         fixedTopicName = options.has("topic") ? (String)options.valueOf("topic") : null;
+
+        String tmp = options.has("prefix") ? (String)options.valueOf("prefix") : null;
+        if(tmp != null) {
+            while(tmp.endsWith("/")) {
+                tmp = tmp.substring(0, tmp.length() - 1);
+            }
+        }
+        topicPrefix = tmp;
         deleteFiles = options.has("delete");
 
         String type = ((String)options.valueOf("type"));
@@ -183,8 +192,16 @@ public class Main {
         }
     }
 
-    private void createTopic(String topicName) {
+    private String calculateTopicName(String topicName) {
         String topic = fixedTopicName != null ? fixedTopicName : topicName;
+        if(topicPrefix != null) {
+            topic = topicPrefix + "/" + topic;
+        }
+        return topic;
+    }
+
+    private void createTopic(String topicName) {
+        String topic = calculateTopicName(topicName);
         System.out.println("Create topic: \"" + topic + "\"");
         // topicControl.removeTopics(">" + topicName);
 
@@ -196,7 +213,8 @@ public class Main {
     }
 
     private void createUpdateStream(String topicName) {
-        String topic = fixedTopicName != null ? fixedTopicName : topicName;
+        String topic = calculateTopicName(topicName);
+
         if(updateStreams.containsKey(topic)) {
             return;
         }
@@ -215,7 +233,6 @@ public class Main {
 
     private void walk(Path dir) {
         try {
-
             Stream<Path> fileStream = Files.list(dir);
             fileStream.filter(path -> path.toFile().isFile())
                     .sorted()
@@ -444,7 +461,7 @@ public class Main {
             return;
         }
 
-        String topic = fixedTopicName != null ? fixedTopicName : topicPath;
+        String topic = calculateTopicName(topicPath);
 
         CompletableFuture<?> result;
         if(streamUpdates) {
@@ -515,6 +532,10 @@ public class Main {
                         .defaultsTo(Integer.MAX_VALUE);
 
                 acceptsAll(asList("topic"), "Fixed topic name")
+                        .withRequiredArg()
+                        .ofType(String.class);
+
+                acceptsAll(asList("prefix"), "Topic prefix, prepended to all topics")
                         .withRequiredArg()
                         .ofType(String.class);
 
