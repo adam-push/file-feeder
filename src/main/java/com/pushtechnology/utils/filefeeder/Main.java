@@ -236,17 +236,7 @@ public class Main {
             Stream<Path> fileStream = Files.list(dir);
             fileStream.filter(path -> path.toFile().isFile())
                     .sorted()
-                    .forEach(path -> {
-                        try {
-                            String topicName = pathToTopicName(path);
-                            createTopic(topicName);
-                            createUpdateStream(topicName);
-                            processFile(path);
-                        }
-                        catch(IOException ex) {
-                            ex.printStackTrace();
-                        }
-                    });
+                    .forEach(this::processFile);
             fileStream.close();
 
             fileStream = Files.list(dir);
@@ -349,6 +339,17 @@ public class Main {
 
     public void processFile(Path path) {
         System.out.println("Processing file: " + path);
+
+        try {
+            String topicName = pathToTopicName(path);
+            createTopic(topicName);
+            if (streamUpdates) {
+                createUpdateStream(topicName);
+            }
+        }
+        catch(IOException ex) {
+            ex.printStackTrace();
+        }
 
         byte[] bytes = readFileContent(path);
 
