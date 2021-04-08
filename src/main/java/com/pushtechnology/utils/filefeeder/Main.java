@@ -144,6 +144,10 @@ public class Main {
         System.out.println("Updating using stream: \t\t" + streamUpdates);
         System.out.println("Read data from: \t\t" + filename);
         System.out.println("Repeat forever: \t\t" + repeat);
+        System.out.println("Delete files after reading: \t" + deleteFiles);
+        System.out.println("Newline-delimited records: \t" + splitLines);
+        System.out.println("Fixed topic name: \t\t" + fixedTopicName);
+        System.out.println("Topic prefix: \t\t\t" + topicPrefix);
     }
 
     public void connect() {
