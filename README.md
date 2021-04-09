@@ -95,3 +95,6 @@ Use a fixed topic name for all updates. This is useful if you want to publish ma
 
 ### --prefix <String>
 If specified, the given path prefix is prepended to the destination topic name.
+
+### --stripSuffix
+Remove the filename suffix (e.g. "json", "txt") from the filename when mapping to a topic name.

@@ -42,6 +42,7 @@ public class Main {
 
     private final String fixedTopicName;
     private final String topicPrefix;
+    private final boolean stripSuffix;
     private final DataType<?> dataType;
     private final TopicType topicType;
     private final Class valueClass;
@@ -87,7 +88,9 @@ public class Main {
             }
         }
         topicPrefix = tmp;
+
         deleteFiles = options.has("delete");
+        stripSuffix = options.has("stripSuffix");
 
         String type = ((String)options.valueOf("type"));
         dataType = Diffusion.dataTypes().getByName(type.toLowerCase());
@@ -148,6 +151,7 @@ public class Main {
         System.out.println("Newline-delimited records: \t" + splitLines);
         System.out.println("Fixed topic name: \t\t" + fixedTopicName);
         System.out.println("Topic prefix: \t\t\t" + topicPrefix);
+        System.out.println("Strip filename suffix: \t\t" + stripSuffix);
     }
 
     public void connect() {
@@ -225,8 +229,16 @@ public class Main {
 
         if (!topicIsTimeSeries && streamUpdates) {
             try {
-                UpdateStream<?> updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, dataType.getClass());
+                System.out.println("Creating update stream");
+
+                UpdateStream<?> updateStream = session.feature(TopicUpdate.class).createUpdateStream(topic, valueClass);
+
+                System.out.println("created update stream");
+
                 updateStream.validate().get();
+
+                System.out.println("Validated update stream");
+
                 updateStreams.put(topic, updateStream);
             } catch (Exception ex) {
                 System.err.println("Unable to create/validate update stream for \"" + topic + "\": " + ex.getMessage());
@@ -332,13 +344,18 @@ public class Main {
     }
 
     private String pathToTopicName(Path path) throws IOException {
-        String leading = new File(filename).getCanonicalFile().getParent();
-        String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
-        int idx = name.lastIndexOf('.');
-        if(idx != -1) {
-            name = name.substring(0, idx);
+        if(stripSuffix) {
+            String leading = new File(filename).getCanonicalFile().getParent();
+            String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
+            int idx = name.lastIndexOf('.');
+            if (idx != -1) {
+                name = name.substring(0, idx);
+            }
+            return name;
         }
-        return name;
+        else {
+            return path.toFile().getCanonicalFile().toString();
+        }
     }
 
     public void processFile(Path path) {
@@ -543,6 +560,8 @@ public class Main {
                 acceptsAll(asList("prefix"), "Topic prefix, prepended to all topics")
                         .withRequiredArg()
                         .ofType(String.class);
+
+                acceptsAll(asList("stripSuffix"), "Strip filename suffix from topic name");
 
                 acceptsAll(asList("delete"), "Delete file after reading");
             }
