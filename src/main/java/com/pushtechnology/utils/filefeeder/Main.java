@@ -166,8 +166,14 @@ public class Main {
         }
 
         while (true) {
-            session = factory.open(url);
+            try {
+                session = factory.open(url);
+            }
+            catch(Exception ex) {
+                System.out.println(ex.getMessage());
+            }
             if (session != null && session.getState().isConnected()) {
+                System.out.println("Connected to Diffusion: " + session.getSessionId());
                 break;
             }
             try {
