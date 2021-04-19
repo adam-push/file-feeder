@@ -344,18 +344,16 @@ public class Main {
     }
 
     private String pathToTopicName(Path path) throws IOException {
+        String leading = path.toFile().getCanonicalFile().getParent();
+        String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
+
         if(stripSuffix) {
-            String leading = new File(filename).getCanonicalFile().getParent();
-            String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
             int idx = name.lastIndexOf('.');
             if (idx != -1) {
                 name = name.substring(0, idx);
             }
-            return name;
         }
-        else {
-            return path.toFile().getCanonicalFile().toString();
-        }
+        return name;
     }
 
     public void processFile(Path path) {
