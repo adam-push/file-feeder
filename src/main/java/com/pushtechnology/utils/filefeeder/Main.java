@@ -51,6 +51,7 @@ public class Main {
     private final boolean topicPublishOnly;
     private final boolean topicIsTimeSeries;
     private final String filename;
+
     private final boolean splitLines;
     private final boolean deleteFiles;
     private final long sleep;
@@ -121,6 +122,7 @@ public class Main {
         topicPublishOnly = options.has("publishonly");
         topicIsTimeSeries = options.has("timeseries");
         filename = (String) options.valueOf("file");
+
         splitLines = options.has("newline");
         sleep = (Long) options.valueOf("sleep");
         repeat = options.has("repeat");
@@ -344,7 +346,7 @@ public class Main {
     }
 
     private String pathToTopicName(Path path) throws IOException {
-        String leading = path.toFile().getCanonicalFile().getParent();
+        String leading = new File(filename).getCanonicalFile().getParent();
         String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
 
         if(stripSuffix) {
@@ -353,6 +355,7 @@ public class Main {
                 name = name.substring(0, idx);
             }
         }
+
         return name;
     }
 
