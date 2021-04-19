@@ -353,7 +353,7 @@ public class Main {
 
     private String pathToTopicName(Path path) throws IOException {
         String leading = new File(filename).getCanonicalFile().getParent();
-        String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length() + 1)).toString();
+        String name = new File(path.toFile().getCanonicalFile().toString().substring(leading.length())).toString();
 
         if(stripSuffix) {
             int idx = name.lastIndexOf('.');
