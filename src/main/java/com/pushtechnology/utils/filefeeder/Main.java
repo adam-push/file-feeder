@@ -362,6 +362,10 @@ public class Main {
             }
         }
 
+        while(name.startsWith("/")) {
+            name = name.substring(1);
+        }
+
         return name;
     }
 
