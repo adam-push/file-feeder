@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Statistics {
     private AtomicInteger updateCount;
 
+    private int elapsed = 0;
     private int period = 5;
     private int lastCount = 0;
 
@@ -19,14 +20,17 @@ public class Statistics {
         updateCount = new AtomicInteger(0);
 
         Runnable outputTask = () -> {
+            elapsed += period;
             int count = updateCount.get();
             int periodCount = count - lastCount;
             lastCount = count;
-            System.out.println("Updates: " + count + " (" + periodCount + ", " + (periodCount / period) + "/sec)");
+            System.out.println("Updates: " + count
+                               + " (" + periodCount + ", " + (periodCount / period) + "/sec"
+                               + ", avg=" + (count / elapsed) + "/sec)");
         };
 
         executor = Executors.newSingleThreadScheduledExecutor();
-        scheduledFuture = executor.scheduleAtFixedRate(outputTask, 0, period, TimeUnit.SECONDS);
+        scheduledFuture = executor.scheduleAtFixedRate(outputTask, period, period, TimeUnit.SECONDS);
     }
 
     public AtomicInteger getUpdateCount() {
@@ -38,4 +42,3 @@ public class Statistics {
         executor.shutdown();
     }
 }
-
