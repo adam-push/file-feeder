@@ -23,7 +23,7 @@ class ChunkSupplier implements Supplier<byte[]> {
     public ChunkSupplier(byte[] src, boolean split) {
         this.src = src;
         this.split = split;
-
+        System.out.println("++AST: Adding " + src.length + " bytes to cache");
         if (split) {
             BufferedReader in = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(src)));
             String line;
@@ -43,7 +43,6 @@ class ChunkSupplier implements Supplier<byte[]> {
         if(end) {
             return null;
         }
-
         if (split) {
             String line = lines.get(idx);
             idx++;
@@ -56,6 +55,10 @@ class ChunkSupplier implements Supplier<byte[]> {
             end = true;
             return src;
         }
+    }
+
+    public byte[] getAll() {
+        return src;
     }
 
     public byte[] getRandom() {

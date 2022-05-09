@@ -24,8 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.*;
 import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
@@ -57,6 +56,7 @@ public class Main {
     private final long sleep;
     private final boolean repeat;
     private final boolean useCache;
+    private final long cacheSleep;
     private final int batchSize;
     private final boolean streamUpdates;
 
@@ -127,6 +127,7 @@ public class Main {
         sleep = (Long) options.valueOf("sleep");
         repeat = options.has("repeat");
         useCache = options.has("cache");
+        cacheSleep = (Long) options.valueOf("cachesleep");
         batchSize = (Integer) options.valueOf("batch");
         streamUpdates = options.has("stream");
 
@@ -145,6 +146,7 @@ public class Main {
         System.out.println("Publish values only: \t\t" + topicPublishOnly);
         System.out.println("Time series: \t\t\t" + topicIsTimeSeries);
         System.out.println("Sleep between updates: \t\t" + sleep + "ms");
+        System.out.println("Sleep between updates from cache: \t" + cacheSleep + " ms");
         System.out.println("Batch size (outstanding ACKs): \t" + batchSize);
         System.out.println("Updating using stream: \t\t" + streamUpdates);
         System.out.println("Read data from: \t\t" + filename);
@@ -297,14 +299,31 @@ public class Main {
                 LinkedList<Tree<ChunkSupplier>.TreeNode<ChunkSupplier>> nodesWithData = cache.getNodesWithData();
 
                 Collections.shuffle(nodesWithData);
+                final long sleepTime = cacheSleep > -1 ? cacheSleep : sleep;
+
+                final int permits = 10;
+                Semaphore sem = new Semaphore(permits);
+                Executors.newSingleThreadScheduledExecutor()
+                                .scheduleAtFixedRate(() -> {
+                                            sem.drainPermits();
+                                            sem.release(permits);
+                                        }, 1, 1, TimeUnit.SECONDS);
+
                 nodesWithData.forEach(node -> {
-                    if (sleep >= 0) {
-                        try {
-                            Thread.sleep(sleep);
-                        } catch (InterruptedException ignore) {
-                        }
+                    try {
+                        sem.acquire();
+                    } catch(InterruptedException ignore) {
                     }
+
+//                    if (sleepTime > 0) {
+//                        try {
+//                            Thread.sleep(sleepTime);
+//                        } catch (InterruptedException ignore) {
+//                        }
+//                    }
                     String topicName = cache.getFullName(node);
+
+                    System.out.println("++AST: Update topic:" + topicName);
 
                     // Get some random data for this node.
                     // If there are multiple records per file, choose a random record from this file.
@@ -315,15 +334,19 @@ public class Main {
                         data = node.data.getRandom();
                     }
                     else {
+                        System.out.println("++AST: Choose random sibling");
                         // Choose a random sibling to get data for. If there are no other siblings, just use own
                         // own data again.
                         LinkedList<Tree<ChunkSupplier>.TreeNode<ChunkSupplier>> siblings = cache.getSiblings(node);
                         if(siblings.size() > 0) {
                             int i = rnd.nextInt(siblings.size());
-                            data = siblings.get(i).data.get();
+                            System.out.println("++AST: Sibling name:" + siblings.get(i).name);
+                            System.out.println("++AST: data=" + siblings.get(i).data);
+                            data = siblings.get(i).data.getAll();
                         }
                         else {
                             if(data == null) {
+                                System.out.println("++AST: No data");
                                 data = node.data.get();
                             }
                         }
@@ -398,7 +421,7 @@ public class Main {
             while((chunk = supplier.get()) != null) {
                 updateTopic(topicName, chunk);
 
-                if(sleep >= 0) {
+                if(sleep > 0) {
                     try {
                         Thread.sleep(sleep);
                     } catch (InterruptedException ignore) {
@@ -467,6 +490,7 @@ public class Main {
                     value = new String(bytes);
                     break;
                 case JSON:
+                    System.out.println("++AST: " + topicPath + ", bytes=" + bytes);
                     value = Diffusion.dataTypes().json().fromJsonString(new String(bytes));
                     break;
                 case BINARY:
@@ -556,6 +580,11 @@ public class Main {
                 acceptsAll(asList("r", "repeat"), "Repeat after all files processed");
 
                 acceptsAll(asList("cache"), "Cache file data for use when --repeat is specified; do not read the file contents again");
+
+                acceptsAll(asList("cachesleep"), "Time to sleep between each update from cache (in ms). If not set, uses --sleep value.")
+                        .withRequiredArg()
+                        .ofType(Long.class)
+                        .defaultsTo(-1L);
 
                 acceptsAll(asList("stream"), "Use UpdateStream (not for timeseries)");
 
